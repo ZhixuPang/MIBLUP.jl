@@ -23,4 +23,4 @@ res = MIBLUP.runMIBLUP(y, geno;
                        snp_names = data.bim[:, "SNP_ID"],
                        n_pre_sels = 20)
 
-println("MIBLUP分析已完成")
+println("MIBLUP END.")
