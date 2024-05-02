@@ -51,10 +51,13 @@ Run Mutual Information BLUP analysis.
 - `cal_mode="speed"`: Kinship calculation mode.
 - `vc_method="he+ai"`: Variance component estimation method ("he", "emma", "ai", "he+ai").
 - `phe_type="continuous"`: Type of phenotype (continuous or discrete).
+- `mi_target="phe"`: Target variable for mutual information and mrmr (gebv or pheno).\n
+                     The main purpose of using `mi_target="gebv"` is to remove the effect of covariance. \n
+                     If gebv is used, it will use `solve_mme` to calculate gebv, which will increase the computate time.
 - `nbins=10`: Number of bins for discretizing phe or gebv. \n
               This parameter is ignored if the `phe_type=="discrete" && mi_target==“phe”`. \n
               If`mi_target==“gebv” && phe_type=="discrete"`, then it is better to set nbins equal to the number of levels.
-- `acc_type`::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
+-`acc_type`::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
 - `ngrids=100`:(`vc_method = "emma"`) Number of grid points for log delta (default: 100).
 - `llim=log(0.01)`: (`vc_method = "emma"`)Lower limit for log delta grid (default: log(0.01)).
 - `ulim=log(100)`: (`vc_method = "emma"`)Upper limit for log delta grid (default: log(100)).
@@ -88,14 +91,14 @@ function runMIBLUP(
     cal_mode = "speed", # calculation mode of kinship matrix
     vc_method = "he+ai",
     phe_type = "continuous", # continuous or discrete
+    mi_target = "phe", # the target variable for mutual information, which can be either “gebv” or “pheno”.
     nbins = 10, # the number of bins for discretizing a continuous variable or a gebv variable when calculating mutual information.
-    n_cv = "4 * 5",
+    n_cv = 5,
     random_seed = 123,
     acc_type = "cor", #::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
     acc_incre = 0.001,
-    p_value_threshold = 0.01,
     ngrids=100, llim=log(0.01), ulim=log(100), esp=1e-10, init = (vg = 0.2, ve = 0.8), max_iter = 30, cc = 1.0e-6, # Argument of cal_vc
-    n_sels::Int = 20, n_pre_sels::Int = 100, verbose::Bool = true, # Argument of mRMR
+    n_sels::Int = 20, n_pre_sels::Int = 1000, verbose::Bool = true, # Argument of mRMR
 )
     # t1 = time()
     inf_index = ismissing.(phe) # 检查表型缺失值
@@ -157,12 +160,25 @@ Mutual Information BLUP\n
     # Calculate Mutual Information
     mi = nothing
     if kinship_weight || marker_selection
-        if phe_type == "discrete"
-            dis_y = Vector{Int}(y)
-        elseif phe_type == "continuous"
-            dis_y = discretize(y, nbins)# 将连续表型离散化
+        if mi_target == "phe"
+            if phe_type == "discrete"
+                dis_y = Vector{Int}(y)
+            elseif phe_type == "continuous"
+                dis_y = discretize(y, nbins)# 将连续表型离散化
+            else
+                throw(DomainError(phe_type, "The phe_type=$(phe_type) argument is error!"))
+            end
+        elseif mi_target == "gebv"
+            if isnothing(K)
+                K = cal_kinship(geno; cal_mode = cal_mode, verbose = verbose)
+            end
+            if verbose
+                println("To estimate the Best Linear Unbiased Predictions (BLUP) using the MME method.\n")
+            end
+            beta, gebv = solve_mme(phe, X, K, lambda) # 估计GEBV
+            dis_y = discretize(gebv, nbins)[ref_index] # 将GEBV离散化
         else
-            throw(DomainError(phe_type, "The phe_type=$(phe_type) argument is error!"))
+            throw(DomainError(mi_target, "The mi_target=$(mi_target) argument is error!"))
         end
     end
 
@@ -191,77 +207,58 @@ Mutual Information BLUP\n
         # X = hcat(X, geno[:, selected_snps]) # 将选择的SNP加入协变量矩阵
     end
 
-    function cv(y, covariance, kinship;lambda=1.0,n_cv = "4 * 5",acc_type = "cor", random_seed = 123)
-        parts = split(n_cv, "*")
-        n_rep = parse(Int, parts[1])
-        n_cv = parse(Int, parts[2])
+    function cv(y, covariance, kinship;lambda=1.0,n_cv = 5,acc_type = "cor", random_seed = 123)
+        # 设置随机数种子
+        Random.seed!(random_seed)
         # 确保输入数据的维度匹配
         n_samples = length(y)
         n_covar = size(covariance, 2)
-        fold_size = Int(div(n_samples, n_cv))
         indices = collect(1:n_samples)
-        # cv_accs = []
-        cv_accs = Vector{Float64}(undef, n_rep * n_cv)
-        for rep in 1:n_rep
-            # 设置随机数种子
-            Random.seed!(random_seed)
-            shuffle!(indices)
-            # println(rep)
-            # println(indices[1:5])
-            @threads for fold in 1:n_cv
-                start_index = (fold - 1) * fold_size + 1
-                end_index = fold * fold_size
-                # 在当前折中选择索引
-                if fold == n_cv && end_index < n_samples
-                    current_indices = indices[start_index:end]
-                else
-                    current_indices = indices[start_index:end_index]
-                end
-                train_indices = setdiff(indices, current_indices)
-                y_train = Vector{Union{Missing, typeof(y[1])}}(y)
-                y_train[current_indices] .= missing
-                beta, u = solve_mme(y_train, covariance, kinship, lambda)
-                yHat = u .+ covariance * beta
-                acc = compute_accuracy(y[current_indices], yHat[current_indices], acc_type)
-                # push!(cv_accs, acc)
-                cv_accs[fold + (rep - 1)*n_cv] = acc
+        shuffle!(indices)
+        fold_size = Int(div(n_samples, n_cv))
+        cv_accs = []
+        for fold in 1:n_cv
+            start_index = (fold - 1) * fold_size + 1
+            end_index = fold * fold_size
+            # 在当前折中选择索引
+            if fold == n_cv && end_index < n_samples
+                current_indices = indices[start_index:end]
+            else
+                current_indices = indices[start_index:end_index]
             end
+            train_indices = setdiff(indices, current_indices)
+            y_train = Vector{Union{Missing, typeof(y[1])}}(y)
+            y_train[current_indices] .= missing
+            beta, u = solve_mme(y_train, covariance, kinship, lambda)
+            yHat = u .+ covariance * beta
+            acc = compute_accuracy(y[current_indices], yHat[current_indices], acc_type)
+            push!(cv_accs, acc)
         end
-
-        # println(length(cv_accs))
-        # println(cv_accs)
         # println(indices[1:5])
         # return mean(cv_accs)
         return cv_accs
     end
 
-    # function snp_selection(y, geno, covariance, kinship;set_acc = [], snps = [], lambda=1.0,n_cv = 5,acc_type = "cor", acc_incre = acc_incre, verbose = true, random_seed = 123)
-    function snp_selection(y, geno, covariance, kinship; snps = [], lambda=1.0,n_cv = "4 * 5",acc_type = "cor", acc_incre = acc_incre, p_value_threshold = 0.01, verbose = true, random_seed = 123)
-        set_acc = cv(y, covariance, kinship; lambda=lambda,n_cv = n_cv,acc_type = acc_type, random_seed = random_seed)
-        # parts = split(n_cv, "*")
-        # n_rep = parse(Int, parts[1])
-        # n_cv = parse(Int, parts[2])
+    function snp_selection(y, geno, covariance, kinship;set_acc = [], snps = [], lambda=1.0,n_cv = 5,acc_type = "cor", acc_incre = acc_incre, verbose = true, random_seed = 123)
+        # set_acc = cv(y, covariance, kinship; lambda=lambda,n_cv = n_cv,acc_type = acc_type, random_seed = random_seed)
         X = copy(covariance)
         selected_snps = []
         k = 0
         for snp in snps
             acc = cv(y, hcat(X, geno[:, snp]), kinship; lambda=lambda,n_cv = n_cv,acc_type = acc_type, random_seed = random_seed)
-            # p = pvalue(OneSampleTTest(acc .- set_acc))
+            p = pvalue(OneSampleTTest(acc .- set_acc))
             improved_acc = mean(acc) - mean(set_acc)
-            # if improved_acc >= acc_incre && p < p_value_threshold
-            if improved_acc >= acc_incre && sum(acc .> set_acc) >= (0.9 * eval(Meta.parse(n_cv)))
+            if improved_acc >= acc_incre && p < 0.05
                 push!(selected_snps, snp)
                 X = hcat(X, geno[:, snp])
                 if verbose
-                    # println("Selecting the $(snp)th marker as a covariate improves the accuracy by $(round(improved_acc, digits = 3)), the p-value is $(round(p, digits = 3)) less than $(p_value_threshold).\n")
-                    println("Selecting the $(snp_names[snp]) as a covariate improves the accuracy by $(round(improved_acc, digits = 3)).")
+                    println("    Selecting the $(snp)th marker as a covariate improves the accuracy by $(round(improved_acc, digits = 4)), with a p-value of $(p).\n")
                 end
                 set_acc = acc
                 k = 0
             else
                 if verbose
-                    # println("Rejecting the selection of the $(snp)th marker as a covariate, the accuracy is $(round(improved_acc, digits = 3)), the p-value is $(round(p, digits = 3)).\n")
-                     println("Rejecting the selection of the $(snp_names[snp]) as a covariate, the accuracy is $(round(improved_acc, digits = 3)).")
+                    println("    Rejecting the selection of the $(snp)th marker as a covariate, the accuracy is $(round(improved_acc, digits = 4)), the p-value is $(p).\n")
                 end
                 k += 1
                 if k >= 5
@@ -272,28 +269,41 @@ Mutual Information BLUP\n
         if verbose
             println("Selection completed. $(length(selected_snps)) SNPs were selected as covariates.\n")
         end
-        return selected_snps, set_acc
+        return selected_snps
     end
 
-    set_acc = nothing
+    # Select kinship
+    kinship_type = "varanden kinship"
+    if kinship_weight && isnothing(kinship)
+        set_acc = cv(y, X[ref_index, :], Symmetric(K[ref_index, ref_index]); lambda = lambda,n_cv = n_cv,acc_type = acc_type, random_seed = random_seed)
+        acc = cv(y, X[ref_index, :], Symmetric(Kw[ref_index, ref_index]); lambda=lambda,n_cv = n_cv,acc_type = acc_type, random_seed = random_seed)
+        p = pvalue(OneSampleTTest(acc .- set_acc))
+        improved_acc = mean(acc) - mean(set_acc)
+        if improved_acc >= acc_incre && p < 0.05
+            K = Kw
+            kinship_type = "weighted kinship"
+            if verbose
+                println("\nUsing weighted kinship significantly improves the accuracy by $(improved_acc), with a p-value of $(p)\n")
+            end
+            set_acc .= acc
+        end
+    end
+
+    if verbose
+        println("Use $(kinship_type) as genetic relationship matrix.\n")
+    end
+
     if marker_selection
-        selected_snps, set_acc = snp_selection(y, geno[ref_index, :], X[ref_index, :], Symmetric(K[ref_index, ref_index]);
-                                      # set_acc = set_acc,
+        selected_snps = snp_selection(y, geno[ref_index, :], X[ref_index, :], Symmetric(K[ref_index, ref_index]);
+                                      set_acc = set_acc,
                                       snps = mrmr_selected_snps,
                                       lambda = lambda,
                                       n_cv = n_cv,
                                       acc_type = acc_type,
                                       acc_incre = acc_incre,
                                       verbose = verbose,
-                                      p_value_threshold = p_value_threshold,
                                       random_seed = random_seed)
         X = hcat(covariance, geno[:, selected_snps]) # 将选择的SNP加入协变量矩阵
-    end
-
-    kinship_type = "MIWG"
-    K = Kw
-    if verbose
-        println("Use $(kinship_type) as genetic relationship matrix.\n")
     end
 
     if verbose
@@ -331,14 +341,14 @@ solve_mme(phe::Vector, covariance::Matrix, K::Symmetric, lambda::Float64 = 1.0)
 To estimate the Best Linear Unbiased Predictions (BLUP) using the MME method.
 
 # Arguments
-- `phe`: The phenotypes vector
-- `covariance`: covariance, design matrix(n * x) for the fixed effects(covariance must contain a column of 1's)
-- `K`: Kinship matrix for all individuals
-- `lambda`: ve/vg, ve is the variance of residual, vg is the variance of additive effect (default: 1.0)
+-`phe`: The phenotypes vector
+-`covariance`: covariance, design matrix(n * x) for the fixed effects(covariance must contain a column of 1's)
+-`K`: Kinship matrix for all individuals
+-`lambda`: ve/vg, ve is the variance of residual, vg is the variance of additive effect (default: 1.0)
 
 # Returns
-- `beta`: The estimated fixed covariance effects coefficients
-- `u`: The Best Linear Unbiased Predictions (BLUP) for each individual
+-`beta`: The estimated fixed covariance effects coefficients
+-`u`: The Best Linear Unbiased Predictions (BLUP) for each individual
 """
 function solve_mme(phe::Vector, covariance::Matrix, K::Symmetric, lambda::Float64 = 1.0)
     inf_index = ismissing.(phe)
@@ -350,30 +360,24 @@ function solve_mme(phe::Vector, covariance::Matrix, K::Symmetric, lambda::Float6
     n = sum(ref_index)
     m = size(K, 1)
 
-
-    if isone(K)
-        beta = X \ y
-        u = zeros(Float64, length(phe))
-    else
-        # Compute Cholesky factorization of K[ref_index, ref_index] + lambda * I
-        L = cholesky(K[ref_index, ref_index] + I * lambda)
-        # L = inv(L.U)
-        # Calculate y^T * U and X^T * U
-        yt = L.L \ y
-        Xt = L.L \ X
-        # Compute X^T * X
-        # XtX = Xt' * Xt
-        # Calculate beta using ldiv!
-        # beta = XtX \ (Xt' * yt)
-        beta = Xt \ yt
-        # Dt = L.L \ (y .- X * beta)
-        S = L \ (y .- X * beta)
-        # Calculate u
-        u = Vector{Float64}(undef, length(phe))
-        mul!(u, K[:, ref_index], S)
-        # Calculate yHat = u + X * beta
-        # yHat = u .+ covariance * beta
-    end
+    # Compute Cholesky factorization of K[ref_index, ref_index] + lambda * I
+    L = cholesky(K[ref_index, ref_index] + I * lambda)
+    # L = inv(L.U)
+    # Calculate y^T * U and X^T * U
+    yt = L.L \ y
+    Xt = L.L \ X
+    # Compute X^T * X
+    # XtX = Xt' * Xt
+    # Calculate beta using ldiv!
+    # beta = XtX \ (Xt' * yt)
+    beta = Xt \ yt
+    # Dt = L.L \ (y .- X * beta)
+    S = L \ (y .- X * beta)
+    # Calculate u
+    u = Vector{Float64}(undef, length(phe))
+    mul!(u, K[:, ref_index], S)
+    # Calculate yHat = u + X * beta
+    # yHat = u .+ covariance * beta
     return (beta = beta, u = u)
 end
 
@@ -384,12 +388,12 @@ cal_kinship(geno::Matrix; weights::Union{Vector, Nothing} = nothing, type = "van
 To calculate the kinship matrix based on genotype data.
 
 # Arguments
-- `geno`: The genotype matrix (rows represent individuals, columns represent markers)
-- `weights`: Weights for each marker (default: nothing)
-- `type`: Type of kinship calculation ("vanraden" or "scale", default: "vanraden")
+-`geno`: The genotype matrix (rows represent individuals, columns represent markers)
+-`weights`: Weights for each marker (default: nothing)
+-`type`: Type of kinship calculation ("vanraden" or "scale", default: "vanraden")
 
 # Returns
-- `K`: The kinship matrix
+-`K`: The kinship matrix
 """
 function cal_kinship(geno::Matrix; weights::Union{Vector, Nothing} = nothing, type = "vanraden", cal_mode = "speed", verbose::Bool = true)
     if verbose
@@ -517,14 +521,14 @@ mrmr(geno::Matrix, y::Vector; n_sels::Int = 20, n_pre_sels::Int = 1000, mis_geno
 The mrmr function performs feature selection using the Minimum Redundancy Maximum Relevance (mRMR) algorithm.
 
 # Arguments
-- `geno`::Matrix: A matrix representing the genotype data. Each row corresponds to a sample, and each column corresponds to a genetic feature.
-- `y`::Vector: A vector representing the target variable or class labels. It should have the same length as the number of samples in geno.
-- `n_sels`::Int = 20 (optional): The number of features to select. Default is 20.
-- `n_pre_sels`::Int = 1000 (optional): The number of pre-selected features. Default is 1000.
-- `verbose`::Bool = true (optional): Whether to display the progress and intermediate results. Default is true.
+-`geno`::Matrix: A matrix representing the genotype data. Each row corresponds to a sample, and each column corresponds to a genetic feature.
+-`y`::Vector: A vector representing the target variable or class labels. It should have the same length as the number of samples in geno.
+-`n_sels`::Int = 20 (optional): The number of features to select. Default is 20.
+-`n_pre_sels`::Int = 1000 (optional): The number of pre-selected features. Default is 1000.
+-`verbose`::Bool = true (optional): Whether to display the progress and intermediate results. Default is true.
 
 # Returns
-- `sels`: The selected markers.
+-`sels`: The selected markers.
 """
 function mrmr(geno::Matrix, y::Vector; n_sels::Int = 20, n_pre_sels::Int = 1000, mis_geno_y = nothing, verbose::Bool = true)
     t1 = time()
@@ -617,11 +621,11 @@ end
 Function to compute accuracy or correlation of predictions.
 
 # Arguments
-- `x1`: Vector of true values.
-- `x2`: Vector of predicted values.
-- `type`::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
+-`x1`: Vector of true values.
+-`x2`: Vector of predicted values.
+-`type`::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
 Returns:
-- `res`: Computed accuracy or correlation.
+-`res`: Computed accuracy or correlation.
 """
 function compute_accuracy(x1, x2, type::String = "cor")
     if type == "cor"
