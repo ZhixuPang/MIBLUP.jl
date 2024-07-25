@@ -98,7 +98,7 @@ function runMIBLUP(
     acc_type = "cor", #::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
     acc_incre = 0.001,
     ngrids=100, llim=log(0.01), ulim=log(100), esp=1e-10, init = (vg = 0.2, ve = 0.8), max_iter = 30, cc = 1.0e-6, # Argument of cal_vc
-    n_pca::Int = 10, n_k::Int = 5, n_sels::Int = 20, n_pre_sels::Int = 1000, verbose::Bool = true, # Argument of mRMR
+    n_pca::Int = 10, n_k::Int = 5, n_sels::Int = 100, n_pre_sels::Int = 1000, verbose::Bool = true, # Argument of mRMR
 )
     # t1 = time()
     inf_index = ismissing.(phe) # 检查表型缺失值
