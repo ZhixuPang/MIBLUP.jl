@@ -177,7 +177,7 @@ Mutual Information BLUP\n
             end
             vals, vecs = eigen(K)
             
-            beta, gebv = solve_mme(phe, hcat(X, vecs[:,sortperm(vals, rev=true)[1:10]]), K, lambda) # 估计GEBV
+            beta, gebv = solve_mme(phe, hcat(X, vecs[:,sortperm(vals, rev=true)[1:n_pca]]), K, lambda) # 估计GEBV
             dis_y = discretize(gebv, nbins)[ref_index] # 将GEBV离散化
         else
             throw(DomainError(mi_target, "The mi_target=$(mi_target) argument is error!"))
