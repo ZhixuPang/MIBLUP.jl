@@ -98,7 +98,7 @@ function runMIBLUP(
     acc_type = "cor", #::String (optional): Type of accuracy or correlation to compute. Valid options are "cor", "auc", "rmse". Default is "cor".
     acc_incre = 0.001,
     ngrids=100, llim=log(0.01), ulim=log(100), esp=1e-10, init = (vg = 0.2, ve = 0.8), max_iter = 30, cc = 1.0e-6, # Argument of cal_vc
-    n_sels::Int = 20, n_pre_sels::Int = 1000, verbose::Bool = true, # Argument of mRMR
+    n_k::Int = 5, n_sels::Int = 20, n_pre_sels::Int = 1000, verbose::Bool = true, # Argument of mRMR
 )
     # t1 = time()
     inf_index = ismissing.(phe) # 检查表型缺失值
@@ -261,7 +261,7 @@ Mutual Information BLUP\n
                     println("    Rejecting the selection of the $(snp)th marker as a covariate, the accuracy is $(round(improved_acc, digits = 4)), the p-value is $(p).\n")
                 end
                 k += 1
-                if k >= 5
+                if k >= n_k
                     break
                 end
             end
