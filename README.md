@@ -3,7 +3,7 @@
 
 ## Usage
 ```
-include("/share/nas2/data/pangzx/Software/julia_dev/MIBLUP/src/MIBLUP.jl")
+include("./MIBLUP.jl")
 ```
 ### 1.Read data
 ```
