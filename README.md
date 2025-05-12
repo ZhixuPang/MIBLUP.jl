@@ -81,13 +81,9 @@ res = runMIBLUP(
 * `kinship`: Final kinship matrix used
 
 
-以下是您提供的“使用流程”内容，我已整理成规范的 Markdown 格式，适合直接加入 `README.md` 文件的“Usage”或“使用说明”部分：
+## Usage
 
----
-
-## 使用流程
-
-### 1. 读取表型数据
+### 1. Load Phenotype Data
 
 ```julia
 using CSV, DataFrames
@@ -96,20 +92,20 @@ y_df = CSV.read("phenotype.csv", DataFrame)
 y = y_df.Phenotype
 ```
 
-### 2. 读取 PLINK 格式的基因型数据
+### 2. Load PLINK Genotype Data
 
 ```julia
-bfile = "data"  # 不包含扩展名的 PLINK 文件名（即包含 data.bed, data.bim, data.fam）
+bfile = "data"  # Base name of the PLINK files (i.e., data.bed, data.bim, data.fam)
 data = MIBLUP.read_plink(bfile)
 geno = data.geno
 ```
 
 ---
 
-## MIBLUP 运行方法
+## Run MIBLUP
 
 ```julia
-res = MIBLUP.runMIBLUP(y, geno; 
+res = MIBLUP.runMIBLUP(y, geno;
     ids = data.fam[:, "Individual_ID"],
     snp_names = data.bim[:, "SNP_ID"],
     n_pre_sels = 20
@@ -118,41 +114,43 @@ res = MIBLUP.runMIBLUP(y, geno;
 
 ---
 
-## GBLUP 运行方法（作为对照）
+## Run GBLUP (as a baseline)
 
 ```julia
-res = MIBLUP.runMIBLUP(y, geno;
+res = MIBLUP.runMIBLUP(yNa, geno;
     ids = data.fam[:, "Individual_ID"],
     snp_names = data.bim[:, "SNP_ID"],
     kinship_weight = false,
-    marker_selection = false
+    marker_selection = false,
+    n_sels = 20,
+    n_pre_sels = round(Int, 0.1 * size(data.bim, 1))
 )
 ```
 
 ---
 
-## 输出结果说明
+## Output Explanation
 
-### 遗传参数估计
+### Estimated Genetic Parameters
 
 ```julia
 vc = DataFrame(vg = res.vc.vg, ve = res.vc.ve)
 ```
 
-### 估计的 GEBV 和 yHat
+### Estimated GEBVs and Predicted Phenotypes
 
 ```julia
-res.res.GEBV  # GEBV
-res.res.yHat  # 预测表型值
+res.res.GEBV  # Genomic Estimated Breeding Values
+res.res.yHat  # Predicted phenotype values
 ```
 
-### 估计的互信息值（mutual information）
+### Estimated Mutual Information
 
 ```julia
 res.mutual_information
 ```
 
-### 所选 SNPs 的效应值
+### Effects of Selected SNPs
 
 ```julia
 res.selected_marker_effects
