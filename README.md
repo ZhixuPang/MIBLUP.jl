@@ -14,13 +14,27 @@
 
 ## Installation
 
-You can install this package from source via:
+Here is the revised **Installation** section for your `README.md`:
 
-```julia
-include("./src/MIBLUP.jl")
+---
+
+## Installation
+
+You can install this package from source as follows:
+
+### Step 1: Download the source code
+
+```bash
+wget https://github.com/ZhixuPang/MIBLUP.jl/archive/refs/heads/master.zip
+unzip master.zip
 ```
 
-Replace `YOUR_USERNAME` with your GitHub handle.
+### Step 2: Launch Julia and include the package
+
+```julia
+include("MIBLUP.jl-master/src/MIBLUP.jl")
+```
+
 
 ## Quick Start
 
