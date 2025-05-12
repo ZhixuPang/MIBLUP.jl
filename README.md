@@ -98,12 +98,31 @@ res = runMIBLUP(
 
 ### 1. Load Phenotype Data
 
+The phenotype file should be in `.csv` format with at least two columns: `ID` and `Phenotype`, for example:
+
+#### `phenotype.csv`
+
+```csv
+ID,Phenotype
+Ind1,12.5
+Ind2,15.3
+Ind3,14.8
+Ind4,NA
+Ind5,13.7
+```
+
+In your Julia script, use the following code to load the phenotype values:
+
 ```julia
 using CSV, DataFrames
 
-y_df = CSV.read("phenotype.csv", DataFrame)
+y_df = CSV.read("phenotype.csv", DataFrame;missingstring = "NA")
 y = y_df.Phenotype
 ```
+
+> **Note:** The order of IDs in `phenotype.csv` should match the order in the PLINK `.fam` file used in `MIBLUP.read_plink`. The `ID` column corresponds to `Individual_ID` in `data.fam`.
+
+
 
 ### 2. Load PLINK Genotype Data
 
