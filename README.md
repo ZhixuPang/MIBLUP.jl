@@ -153,9 +153,7 @@ res = MIBLUP.runMIBLUP(yNa, geno;
     ids = data.fam[:, "Individual_ID"],
     snp_names = data.bim[:, "SNP_ID"],
     kinship_weight = false,
-    marker_selection = false,
-    n_sels = 20,
-    n_pre_sels = round(Int, 0.1 * size(data.bim, 1))
+    marker_selection = false
 )
 ```
 
