@@ -205,7 +205,7 @@ y = Xb + Mₛf + Zu + e                      (1)
 * `Mₛ`: matrix of selected SNP markers
 * `f`: fixed effects of selected SNPs
 * `Z`: design matrix for random effect `u`
-* `u* ~ N(0, G_w * σ²_u)`: random genetic effects modeled using the mutual information-weighted GRM `G_w`
+* `u ~ N(0, G_w * σ²_u)`: random genetic effects modeled using the mutual information-weighted GRM `G_w`
 * `e ~ N(0, I * σ²_e)`: residual error
 
 The genomic estimated breeding value (GEBV) is computed as:
