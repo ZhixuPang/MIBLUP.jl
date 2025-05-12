@@ -17,7 +17,6 @@
 You can install this package from source via:
 
 ```julia
-using Pkg
 include("./src/MIBLUP.jl")
 ```
 
