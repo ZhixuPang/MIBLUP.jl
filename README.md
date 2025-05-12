@@ -186,3 +186,67 @@ res.mutual_information
 res.selected_marker_effects
 ```
 
+---
+
+## 🧠 Method Description
+
+**MIBLUP (Mutual Information-based Best Linear Unbiased Prediction)** is a two-stage genomic prediction method that combines mutual information-based SNP selection with a weighted GBLUP model. It improves prediction accuracy by identifying and emphasizing informative SNPs prior to model fitting.
+
+### Model Formulation
+
+The MIBLUP model is defined as:
+
+```
+y = Xb + Mₛf + Zu + e                      (1)
+```
+
+* `y`: vector of phenotypes
+* `X`: design matrix for fixed effects `b`
+* `Mₛ`: matrix of selected SNP markers
+* `f`: fixed effects of selected SNPs
+* `Z`: design matrix for random effect `u`
+* `u* ~ N(0, G_w * σ²_u)`: random genetic effects modeled using the mutual information-weighted GRM `G_w`
+* `e ~ N(0, I * σ²_e)`: residual error
+
+The genomic estimated breeding value (GEBV) is computed as:
+
+```
+g = Mₛf + u = Mₛf + G_w Z' V⁻¹ (y - Mₛf - Xb)       (2)
+```
+
+where `V = ZG_w Z'σ²_g + Iσ²_e`.
+
+### SNP Selection Procedure
+
+MIBLUP uses a two-stage marker selection strategy:
+
+1. **Pre-selection with mRMR (Minimum Redundancy Maximum Relevance):**
+   The top `n_pre_sels` SNPs are selected by ranking their mutual information with the phenotype, while minimizing redundancy among selected markers. This step ensures the initial subset of SNPs is both relevant and non-redundant.
+
+2. **Refinement via Incremental Feature Selection and Cross-validation:**
+   The pre-selected SNPs are added sequentially to the model. For each SNP, the improvement in prediction accuracy is evaluated using N-fold cross-validation. A SNP is retained if it consistently improves accuracy (p < 0.05) across folds. The process terminates if a preset number `k` of consecutive SNPs fail to enhance performance.
+
+### Mutual Information-weighted GRM
+
+The genomic relationship matrix `G_w` is constructed as:
+
+```
+G_w = W D W' / m                         (3)
+```
+
+* `W`: standardized genotype matrix
+* `D`: diagonal matrix of SNP weights `d_k`
+
+The diagonal elements `d_k` are defined as:
+
+```
+d_k = w_k / (2p_k(1 - p_k))             (4)
+```
+
+where:
+
+* `w_k = [I(m_k, y) × m] / Σ I(m_k, y)`
+* `I(m_k, y)`: mutual information between marker `k` and phenotype `y`
+* `p_k`: allele frequency at SNP `k`
+* `w_k`: reflects the informativeness of SNP `k`
+
