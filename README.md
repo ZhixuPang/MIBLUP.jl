@@ -129,7 +129,7 @@ y = y_df.Phenotype
 ```julia
 bfile = "data"  # Base name of the PLINK files (i.e., data.bed, data.bim, data.fam)
 data = MIBLUP.read_plink(bfile)
-geno = data.geno
+geno = data.bed
 ```
 
 ---
