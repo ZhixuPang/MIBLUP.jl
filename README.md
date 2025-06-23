@@ -1,5 +1,6 @@
 # MIBLUP.jl
-![Fig 1 MIBLUP](https://github.com/ZhixuPang/MIBLUP.jl/assets/137134445/6b5e056c-1209-4b4b-920d-c2c19c7979f9)
+![流程图](https://github.com/user-attachments/assets/d2e80c1f-e59e-49f7-b8a0-6536d9216ede)
+
 
 **MIBLUP.jl** implements Mutual Information-based Best Linear Unbiased Prediction (MIBLUP), a genomic prediction method that integrates mutual information theory with BLUP to improve prediction accuracy, especially when feature selection or marker weighting is beneficial.
 
